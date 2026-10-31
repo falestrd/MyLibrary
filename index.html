@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>내 서재</title>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f4ef; --card: #fff; --ink: #2b2a27; --muted: #7a776f;
+    --line: #e4e0d6; --accent: #3d6b5a; --accent-soft: #e5efe9; --danger: #b4443a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  header { padding: 20px 24px 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 24px; }
+  header .stats { color: var(--muted); font-size: 13px; flex: 1; min-width: 200px; }
+  main { display: grid; grid-template-columns: 340px 1fr; gap: 20px; padding: 12px 24px 40px; }
+  @media (max-width: 900px) {
+    header { padding: 16px 14px 4px; }
+    main { grid-template-columns: 1fr; padding: 10px 14px 40px; }
+  }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .panel h2 { margin: 0 0 12px; font-size: 17px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 15px; background: #fff; }
+  textarea { resize: vertical; min-height: 56px; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; min-width: 0; }
+  button { font: inherit; font-size: 14px; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line); background: #fff; cursor: pointer; color: var(--ink); }
+  button:hover { background: #f1efe9; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.danger { color: var(--danger); }
+  button.small { padding: 5px 10px; font-size: 13px; }
+  button.scan { background: var(--ink); color: #fff; border-color: var(--ink); font-size: 15px; padding: 10px 16px; }
+  .actions { display: flex; gap: 8px; margin-top: 16px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .cover-preview { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+  .cover-preview img { width: 48px; height: 68px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
+
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .toolbar input[type=search] { flex: 2 1 220px; }
+  .toolbar select { flex: 1 1 110px; width: auto; }
+
+  .book { display: grid; grid-template-columns: 48px 1fr auto; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--line); align-items: start; }
+  .book.editing { background: var(--accent-soft); border-radius: 8px; }
+  .book .cover { width: 48px; height: 68px; border-radius: 4px; background: #efece4; display: flex; align-items: center; justify-content: center; font-size: 22px; overflow: hidden; }
+  .book .cover img { width: 100%; height: 100%; object-fit: cover; }
+  .book .title { font-weight: 600; }
+  .book .meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .book .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .book .memo { color: var(--muted); font-size: 12px; margin-top: 6px; white-space: pre-wrap; }
+  .book .ops { display: flex; flex-direction: column; gap: 6px; }
+  .badge, .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #efece4; white-space: nowrap; }
+  .badge.unread { background: #eee; }
+  .badge.read { background: var(--accent-soft); color: var(--accent); }
+  .badge.reading { background: #fdf0d8; color: #9a6a12; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+  .footer-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 10; padding: 12px; }
+  .modal[hidden] { display: none; }
+  .modal .box { background: #fff; border-radius: 14px; padding: 16px; width: 100%; max-width: 480px; max-height: 95vh; overflow: auto; }
+  .modal h3 { margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  #liveBox { position: relative; border-radius: 8px; overflow: hidden; background: #111; }
+  #liveBox[hidden] { display: none; }
+  #video { width: 100%; display: block; }
+  #liveBox .guide { position: absolute; left: 5%; right: 5%; top: 30%; bottom: 30%; border: 2px solid #7fe0b5; border-radius: 6px; box-shadow: 0 0 0 999px rgba(0,0,0,.35); }
+  #scanMsg { font-size: 14px; margin: 10px 0; }
+  .bulk { background: #f6f4ef; border-radius: 8px; padding: 10px; font-size: 13px; margin: 10px 0; }
+  .bulk label { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--ink); font-size: 14px; }
+  .bulk input { width: auto; }
+  #scanLog { list-style: none; padding: 0; margin: 8px 0 0; font-size: 13px; }
+  #scanLog li { padding: 4px 0; border-bottom: 1px dashed var(--line); }
+  #scanLog li.ok { color: var(--accent); }
+  #scanLog li.warn { color: #9a6a12; }
+  #scanLog li.err { color: var(--danger); }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20; max-width: 90vw; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📚 내 서재</h1>
+  <span class="stats" id="stats">불러오는 중...</span>
+  <button class="scan" id="scanBtn">📷 바코드 스캔</button>
+  <button id="settingsBtn" title="연결 설정">⚙️</button>
+</header>
+
+<main>
+  <!-- 등록/수정 폼 -->
+  <section class="panel">
+    <h2 id="formTitle">새 책 등록</h2>
+    <form id="bookForm" autocomplete="off">
+      <label for="isbn">ISBN</label>
+      <div class="row">
+        <input id="isbn" inputmode="numeric" placeholder="978...">
+        <button type="button" id="lookupBtn" style="flex:0 0 auto">자동 채우기</button>
+      </div>
+
+      <label for="title">제목 *</label>
+      <input id="title" required>
+
+      <label for="author">저자</label>
+      <input id="author">
+
+      <div class="row">
+        <div><label for="publisher">출판사</label><input id="publisher"></div>
+        <div style="flex:0 0 90px"><label for="year">출간연도</label><input id="year" inputmode="numeric" maxlength="4"></div>
+      </div>
+
+      <div class="row">
+        <div><label for="genre">분류</label><input id="genre" list="genreList" placeholder="소설, 인문..."></div>
+        <div><label for="location">위치</label><input id="location" list="locationList" placeholder="거실 책장 2단"></div>
+      </div>
+      <datalist id="genreList"></datalist>
+      <datalist id="locationList"></datalist>
+
+      <label for="status">상태</label>
+      <select id="status">
+        <option value="unread">안 읽음</option>
+        <option value="reading">읽는 중</option>
+        <option value="read">다 읽음</option>
+      </select>
+
+      <label for="memo">메모</label>
+      <textarea id="memo"></textarea>
+
+      <input type="hidden" id="cover">
+      <div class="cover-preview" id="coverPreview" hidden><img id="coverImg" alt=""><span class="hint">표지</span></div>
+
+      <div class="actions">
+        <button type="submit" class="primary" id="submitBtn">등록</button>
+        <button type="button" id="cancelBtn" hidden>취소</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 목록 -->
+  <section class="panel">
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="제목, 저자, 출판사, 메모, ISBN 검색">
+      <select id="filterStatus">
+        <option value="">모든 상태</option>
+        <option value="unread">안 읽음</option>
+        <option value="reading">읽는 중</option>
+        <option value="read">다 읽음</option>
+      </select>
+      <select id="filterGenre"><option value="">모든 분류</option></select>
+      <select id="filterLocation"><option value="">모든 위치</option></select>
+      <select id="sortBy">
+        <option value="createdAt:-1">최근 등록순</option>
+        <option value="title:1">제목순</option>
+        <option value="author:1">저자순</option>
+        <option value="year:-1">출간연도순</option>
+        <option value="location:1">위치순</option>
+      </select>
+    </div>
+
+    <div id="list"></div>
+    <div class="empty" id="empty" hidden></div>
+
+    <div class="footer-tools">
+      <button type="button" id="refreshBtn">🔄 새로고침</button>
+      <button type="button" id="importBtn">이전 백업(JSON) 불러오기</button>
+      <input type="file" id="importFile" accept=".json,application/json" hidden>
+    </div>
+    <div class="hint">데이터는 Google 스프레드시트에 저장됩니다. 엑셀로 받으려면 스프레드시트에서 [파일 &gt; 다운로드]를 쓰세요.</div>
+  </section>
+</main>
+
+<!-- 바코드 스캔 -->
+<div class="modal" id="scanModal" hidden>
+  <div class="box">
+    <h3>바코드 스캔 <button class="small" id="scanClose">닫기</button></h3>
+    <div id="liveBox" hidden>
+      <video id="video" playsinline muted></video>
+      <div class="guide"></div>
+    </div>
+    <div id="scanMsg"></div>
+    <div class="row">
+      <button type="button" id="cameraBtn">📸 카메라로 찍기</button>
+      <button type="button" id="albumBtn">🖼️ 앨범에서 고르기</button>
+    </div>
+    <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+    <input type="file" id="albumInput" accept="image/*" hidden>
+    <div class="hint">바코드만 화면에 크게 나오도록 가까이서 찍으면 잘 읽혀요.</div>
+    <div class="bulk">
+      <label><input type="checkbox" id="bulkMode"> 연속 등록 (스캔하면 바로 저장)</label>
+      <div class="hint" id="bulkInfo"></div>
+    </div>
+    <ul id="scanLog"></ul>
+  </div>
+</div>
+
+<!-- 연결 설정 -->
+<div class="modal" id="setupModal" hidden>
+  <div class="box">
+    <h3>서재 연결 설정</h3>
+    <div class="hint">Apps Script 웹 앱 주소와 비밀 키를 입력하세요. 이 기기의 브라우저에만 저장됩니다.</div>
+    <label for="cfgUrl">웹 앱 URL</label>
+    <input id="cfgUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+    <label for="cfgToken">비밀 키</label>
+    <input id="cfgToken" type="password" autocomplete="off">
+    <div class="hint" id="setupMsg"></div>
+    <div class="actions">
+      <button type="button" class="primary" id="setupSave">연결</button>
+      <button type="button" id="setupClose">닫기</button>
+    </div>
+    <div class="footer-tools" id="setupExtra" hidden>
+      <button type="button" id="copyLink">다른 기기용 연결 링크 복사</button>
+      <button type="button" class="danger" id="disconnect">이 기기 연결 해제</button>
+    </div>
+    <div class="hint" id="setupExtraHint" hidden>연결 링크에는 비밀 키가 들어 있어요. 내 기기로만 보내세요.</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STATUS_LABEL = { unread: '안 읽음', reading: '읽는 중', read: '다 읽음' };
+const FIELDS = ['isbn', 'title', 'author', 'publisher', 'year', 'genre', 'location', 'status', 'memo', 'cover'];
+
+let books = [];
+let editingId = null;
+
+const $ = id => document.getElementById(id);
+
+// ---------- 서버(Apps Script) 연결 ----------
+const CONFIG_KEY = 'my-library-config';
+let config = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null');
+
+// 연결 링크(#setup=...)로 열었으면 설정을 저장하고 주소창에서 지움
+(function readSetupLink() {
+  const m = location.hash.match(/^#setup=(.+)$/);
+  if (!m) return;
+  try {
+    const c = JSON.parse(decodeURIComponent(m[1]));
+    if (c.url && c.token) {
+      config = { url: c.url, token: c.token };
+      localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    }
+  } catch {}
+  history.replaceState(null, '', location.pathname + location.search);
+})();
+
+// Content-Type을 text/plain으로 보내야 Apps Script에서 CORS 사전 요청 없이 받아 줌
+async function call(action, payload = {}, cfg = config) {
+  if (!cfg) throw new Error('연결 설정이 필요해요');
+  let res;
+  try {
+    res = await fetch(cfg.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, token: cfg.token, ...payload }),
+    });
+  } catch {
+    throw new Error('서버에 연결하지 못했어요. 웹 앱 URL과 배포 설정(액세스: 모든 사용자)을 확인하세요.');
+  }
+  let json;
+  try { json = await res.json(); } catch { throw new Error('서버 응답을 읽지 못했어요. 웹 앱 URL을 확인하세요.'); }
+  if (!json.ok) throw new Error(json.error);
+  return json.data;
+}
+
+const api = {
+  listBooks: () => call('list'),
+  saveBook: book => call('save', { book }),
+  deleteBook: id => call('delete', { id }),
+  importBooks: books => call('import', { books }),
+  lookupIsbn: isbn => call('lookup', { isbn }),
+};
+
+function openSetup(msg = '') {
+  $('cfgUrl').value = config?.url || '';
+  $('cfgToken').value = config?.token || '';
+  $('setupMsg').textContent = msg;
+  $('setupExtra').hidden = $('setupExtraHint').hidden = !config;
+  $('setupModal').hidden = false;
+}
+
+$('settingsBtn').addEventListener('click', () => openSetup());
+$('setupClose').addEventListener('click', () => $('setupModal').hidden = true);
+
+$('setupSave').addEventListener('click', async () => {
+  const cfg = { url: $('cfgUrl').value.trim(), token: $('cfgToken').value.trim() };
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(cfg.url)) {
+    return $('setupMsg').textContent = '웹 앱 URL은 https://script.google.com/macros/s/.../exec 형식이어야 해요.';
+  }
+  if (!cfg.token) return $('setupMsg').textContent = '비밀 키를 입력하세요.';
+  $('setupSave').disabled = true;
+  $('setupMsg').textContent = '연결 확인 중...';
+  try {
+    books = await call('list', {}, cfg);
+    config = cfg;
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
+    $('setupModal').hidden = true;
+    render();
+    toast('연결되었습니다');
+  } catch (err) {
+    $('setupMsg').textContent = '연결 실패: ' + err.message;
+  } finally {
+    $('setupSave').disabled = false;
+  }
+});
+
+$('copyLink').addEventListener('click', async () => {
+  const link = location.origin + location.pathname + '#setup=' + encodeURIComponent(JSON.stringify(config));
+  try {
+    await navigator.clipboard.writeText(link);
+    toast('링크를 복사했어요. 휴대폰으로 보내서 열어 보세요');
+  } catch {
+    prompt('아래 링크를 복사하세요', link);
+  }
+});
+
+$('disconnect').addEventListener('click', () => {
+  if (!confirm('이 기기에서 연결 정보를 지울까요? (스프레드시트의 데이터는 그대로 남아요)')) return;
+  localStorage.removeItem(CONFIG_KEY);
+  config = null;
+  books = [];
+  render();
+  openSetup();
+});
+
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function normalizeIsbn(s) { return String(s || '').replace(/[^0-9Xx]/g, '').toUpperCase(); }
+
+async function loadBooks() {
+  if (!config) {
+    $('stats').textContent = '연결 설정이 필요해요';
+    return openSetup('처음 한 번만 설정하면 됩니다.');
+  }
+  $('stats').textContent = '불러오는 중...';
+  try {
+    books = await api.listBooks();
+    render();
+  } catch (e) {
+    $('stats').textContent = '불러오기 실패: ' + e.message;
+  }
+}
+
+// ---------- 폼 ----------
+function readForm() {
+  const data = {};
+  FIELDS.forEach(f => data[f] = $(f).value.trim());
+  data.isbn = normalizeIsbn(data.isbn);
+  return data;
+}
+
+function setCover(url) {
+  $('cover').value = url || '';
+  $('coverPreview').hidden = !url;
+  if (url) $('coverImg').src = url;
+}
+
+function fillForm(book) {
+  FIELDS.forEach(f => $(f).value = book?.[f] ?? (f === 'status' ? 'unread' : ''));
+  setCover(book?.cover);
+}
+
+// 위치·분류·상태는 연달아 등록할 때 편하도록 유지
+function resetForm() {
+  const keep = { genre: $('genre').value, location: $('location').value, status: $('status').value };
+  editingId = null;
+  fillForm(keep);
+  $('formTitle').textContent = '새 책 등록';
+  $('submitBtn').textContent = '등록';
+  $('cancelBtn').hidden = true;
+  render();
+}
+
+function applyInfo(info) {
+  $('title').value = info.title || '';
+  $('author').value = info.author || '';
+  $('publisher').value = info.publisher || '';
+  $('year').value = info.year || '';
+  if (!$('genre').value.trim() && info.genre) $('genre').value = info.genre;
+  setCover(info.cover);
+}
+
+function upsertLocal(book) {
+  const i = books.findIndex(b => b.id === book.id);
+  if (i >= 0) books[i] = book; else books.push(book);
+}
+
+$('bookForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const data = readForm();
+  if (!data.title) return;
+
+  if (data.isbn) {
+    const dup = books.find(b => b.isbn === data.isbn && b.id !== editingId);
+    if (dup && !confirm(`같은 ISBN의 책이 이미 있습니다: "${dup.title}"\n그래도 저장할까요?`)) return;
+  }
+
+  $('submitBtn').disabled = true;
+  try {
+    const saved = await api.saveBook(editingId ? { ...data, id: editingId } : data);
+    upsertLocal(saved);
+    toast(editingId ? '수정했습니다' : `"${saved.title}" 등록 완료`);
+    resetForm();
+  } catch (err) {
+    toast('저장 실패: ' + err.message);
+  } finally {
+    $('submitBtn').disabled = false;
+  }
+});
+
+$('cancelBtn').addEventListener('click', resetForm);
+
+$('lookupBtn').addEventListener('click', async () => {
+  const isbn = normalizeIsbn($('isbn').value);
+  if (!isbn) return toast('ISBN을 입력하세요');
+  $('lookupBtn').disabled = true;
+  try {
+    const info = await api.lookupIsbn(isbn);
+    if (!info) return toast('책 정보를 찾지 못했습니다');
+    applyInfo(info);
+    toast('정보를 채웠습니다');
+  } catch (err) {
+    toast('조회 실패: ' + err.message);
+  } finally {
+    $('lookupBtn').disabled = false;
+  }
+});
+
+// ---------- 목록 ----------
+function editBook(id) {
+  const book = books.find(b => b.id === id);
+  if (!book) return;
+  editingId = id;
+  fillForm(book);
+  $('formTitle').textContent = '책 정보 수정';
+  $('submitBtn').textContent = '저장';
+  $('cancelBtn').hidden = false;
+  render();
+  $('bookForm').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function deleteBook(id) {
+  const book = books.find(b => b.id === id);
+  if (!book || !confirm(`"${book.title}"을(를) 삭제할까요?`)) return;
+  try {
+    await api.deleteBook(id);
+    books = books.filter(b => b.id !== id);
+    if (editingId === id) resetForm(); else render();
+    toast('삭제했습니다');
+  } catch (err) {
+    toast('삭제 실패: ' + err.message);
+  }
+}
+
+function fillSelect(select, values, allLabel) {
+  const current = select.value;
+  select.innerHTML = `<option value="">${allLabel}</option>` +
+    values.map(v => `<option>${escapeHtml(v)}</option>`).join('');
+  select.value = values.includes(current) ? current : '';
+}
+
+function uniqueValues(key) {
+  return [...new Set(books.map(b => b[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+}
+
+function render() {
+  const genres = uniqueValues('genre');
+  const locations = uniqueValues('location');
+  fillSelect($('filterGenre'), genres, '모든 분류');
+  fillSelect($('filterLocation'), locations, '모든 위치');
+  $('genreList').innerHTML = genres.map(v => `<option value="${escapeHtml(v)}">`).join('');
+  $('locationList').innerHTML = locations.map(v => `<option value="${escapeHtml(v)}">`).join('');
+
+  const q = $('search').value.trim().toLowerCase();
+  const fs = $('filterStatus').value, fg = $('filterGenre').value, fl = $('filterLocation').value;
+  const [key, dir] = $('sortBy').value.split(':');
+
+  const rows = books.filter(b =>
+    (!fs || b.status === fs) && (!fg || b.genre === fg) && (!fl || b.location === fl) &&
+    (!q || [b.title, b.author, b.publisher, b.memo, b.isbn].some(v => (v || '').toLowerCase().includes(q)))
+  ).sort((a, b) => {
+    const x = a[key] ?? '', y = b[key] ?? '';
+    return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'ko')) * Number(dir);
+  });
+
+  $('list').innerHTML = rows.map(b => `
+    <div class="book ${b.id === editingId ? 'editing' : ''}">
+      <div class="cover">${b.cover ? `<img src="${escapeHtml(b.cover)}" loading="lazy" alt="">` : '📕'}</div>
+      <div>
+        <div class="title">${escapeHtml(b.title)}</div>
+        <div class="meta">${[b.author, b.publisher, b.year].filter(Boolean).map(escapeHtml).join(' · ')}</div>
+        <div class="tags">
+          <span class="badge ${b.status}">${STATUS_LABEL[b.status] || ''}</span>
+          ${b.genre ? `<span class="tag">${escapeHtml(b.genre)}</span>` : ''}
+          ${b.location ? `<span class="tag">📍 ${escapeHtml(b.location)}</span>` : ''}
+        </div>
+        ${b.memo ? `<div class="memo">${escapeHtml(b.memo)}</div>` : ''}
+      </div>
+      <div class="ops">
+        <button class="small" data-edit="${b.id}">수정</button>
+        <button class="small danger" data-del="${b.id}">삭제</button>
+      </div>
+    </div>`).join('');
+
+  const empty = $('empty');
+  empty.hidden = rows.length > 0;
+  empty.textContent = books.length ? '조건에 맞는 책이 없습니다.' : '아직 등록된 책이 없습니다. 바코드를 스캔하거나 직접 등록해 보세요.';
+
+  const count = s => books.filter(b => b.status === s).length;
+  $('stats').textContent = `총 ${books.length}권 · 다 읽음 ${count('read')} · 읽는 중 ${count('reading')} · 안 읽음 ${count('unread')}` +
+    (rows.length !== books.length ? ` (표시 ${rows.length}권)` : '');
+}
+
+$('list').addEventListener('click', e => {
+  const { edit, del } = e.target.dataset;
+  if (edit) editBook(edit);
+  if (del) deleteBook(del);
+});
+
+['search', 'filterStatus', 'filterGenre', 'filterLocation', 'sortBy'].forEach(id => $(id).addEventListener('input', render));
+$('refreshBtn').addEventListener('click', loadBooks);
+
+// ---------- 바코드 인식 ----------
+// 휴대폰 내장 인식기(BarcodeDetector)가 있으면 먼저 쓰고, 없으면 ZXing으로 인식
+let nativeDetector = null;
+let zxing = null;
+
+async function initDetector() {
+  if (!('BarcodeDetector' in window)) return;
+  try {
+    const formats = await BarcodeDetector.getSupportedFormats();
+    if (formats.includes('ean_13')) nativeDetector = new BarcodeDetector({ formats: ['ean_13'] });
+  } catch {}
+}
+
+function getZxing() {
+  if (!zxing) {
+    if (!window.ZXing) throw new Error('바코드 인식 라이브러리를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.');
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    zxing = { reader: new ZXing.MultiFormatReader(), hints };
+  }
+  return zxing;
+}
+
+function decodeZxing(canvas) {
+  const { reader, hints } = getZxing();
+  const { data, width, height } = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height);
+  const lum = new Uint8ClampedArray(width * height);
+  for (let i = 0, j = 0; j < lum.length; i += 4, j++) lum[j] = (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+  const source = new ZXing.RGBLuminanceSource(lum, width, height);
+  for (const Binarizer of [ZXing.HybridBinarizer, ZXing.GlobalHistogramBinarizer]) {
+    try { return reader.decode(new ZXing.BinaryBitmap(new Binarizer(source)), hints).getText(); } catch {}
+  }
+  return null;
+}
+
+async function decodeCanvas(canvas) {
+  if (nativeDetector) {
+    try {
+      const found = await nativeDetector.detect(canvas);
+      if (found.length) return found[0].rawValue;
+    } catch {}
+  }
+  return decodeZxing(canvas);
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('사진을 열 수 없어요. (지원하지 않는 형식일 수 있어요)'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function drawScaled(img, maxSize, rotation) {
+  const scale = Math.min(1, maxSize / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+  const sideways = rotation % 180 !== 0;
+  const canvas = document.createElement('canvas');
+  canvas.width = sideways ? h : w;
+  canvas.height = sideways ? w : h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate(rotation * Math.PI / 180);
+  ctx.drawImage(img, -w / 2, -h / 2, w, h);
+  return canvas;
+}
+
+// 크기·방향을 바꿔 가며 여러 번 시도
+async function decodeImageFile(file) {
+  const img = await loadImage(file);
+  try {
+    for (const size of [1600, 1000, 2400]) {
+      for (const rotation of [0, 90]) {
+        const code = await decodeCanvas(drawScaled(img, size, rotation));
+        if (code) return code;
+      }
+    }
+    return null;
+  } finally {
+    URL.revokeObjectURL(img.src);
+  }
+}
+
+// ---------- 바코드 스캔 ----------
+let stream = null;
+let liveTimer = null;
+let scanBusy = false;
+let lastScan = { code: '', at: 0 };
+
+function bulkDefaults() {
+  return { genre: $('genre').value.trim(), location: $('location').value.trim(), status: $('status').value, memo: '' };
+}
+
+function updateBulkInfo() {
+  const d = bulkDefaults();
+  $('bulkInfo').textContent = `저장 시 적용: 위치 "${d.location || '없음'}" · 분류 "${d.genre || '없음'}" · ${STATUS_LABEL[d.status]}` +
+    ' (등록 폼에서 미리 정해 두세요)';
+}
+
+function scanLog(msg, cls = '') {
+  const li = document.createElement('li');
+  li.textContent = msg;
+  li.className = cls;
+  $('scanLog').prepend(li);
+  while ($('scanLog').children.length > 10) $('scanLog').lastChild.remove();
+}
+
+async function openScanner() {
+  $('scanModal').hidden = false;
+  updateBulkInfo();
+  $('scanMsg').textContent = '카메라를 켜는 중...';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+    const video = $('video');
+    video.srcObject = stream;
+    await video.play();
+    $('liveBox').hidden = false;
+    $('scanMsg').textContent = '책 뒷면의 바코드를 가운데 띠 안에 맞춰 주세요.';
+    liveTick();
+  } catch (e) {
+    stopLive();
+    $('scanMsg').textContent = '이 화면에서는 실시간 카메라를 쓸 수 없어요. 아래 버튼으로 바코드 사진을 찍거나 골라 주세요.';
+  }
+}
+
+// 화면 가운데 띠 영역만 잘라 인식
+const liveCanvas = document.createElement('canvas');
+async function liveTick() {
+  if (!stream) return;
+  const video = $('video');
+  if (video.videoWidth && !scanBusy) {
+    const w = video.videoWidth, h = video.videoHeight;
+    const cw = Math.round(w * 0.9), ch = Math.round(h * 0.4);
+    liveCanvas.width = cw;
+    liveCanvas.height = ch;
+    liveCanvas.getContext('2d', { willReadFrequently: true }).drawImage(video, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, cw, ch);
+    try {
+      const code = await decodeCanvas(liveCanvas);
+      if (code) await onScanned(code);
+    } catch (err) {
+      $('scanMsg').textContent = err.message;
+    }
+  }
+  if (stream) liveTimer = setTimeout(liveTick, 150);
+}
+
+function stopLive() {
+  clearTimeout(liveTimer);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  $('video').srcObject = null;
+  $('liveBox').hidden = true;
+}
+
+function closeScanner() {
+  stopLive();
+  $('scanModal').hidden = true;
+}
+
+async function onScanned(code) {
+  const isbn = normalizeIsbn(code);
+  const now = Date.now();
+  if (scanBusy || (isbn === lastScan.code && now - lastScan.at < 4000)) return;
+  lastScan = { code: isbn, at: now };
+
+  if (!/^97[89]\d{10}$/.test(isbn)) return scanLog(`책 바코드가 아니에요 (${isbn})`, 'warn');
+
+  const dup = books.find(b => b.isbn === isbn);
+  if (dup) {
+    navigator.vibrate?.([60, 60, 60]);
+    return scanLog(`이미 있는 책: ${dup.title}`, 'warn');
+  }
+
+  scanBusy = true;
+  scanLog(`${isbn} 조회 중...`);
+  try {
+    const info = await api.lookupIsbn(isbn);
+
+    if ($('bulkMode').checked) {
+      const defaults = bulkDefaults();
+      const book = info
+        ? { ...defaults, isbn, ...info, genre: defaults.genre || info.genre || '' }
+        : { ...defaults, isbn, title: `ISBN ${isbn}`, memo: '자동 조회 실패 - 정보 입력 필요' };
+      const saved = await api.saveBook(book);
+      upsertLocal(saved);
+      render();
+      navigator.vibrate?.(80);
+      scanLog(info ? `✔ 등록: ${saved.title}` : `⚠ 정보 없이 등록: ${isbn} (나중에 수정하세요)`, info ? 'ok' : 'warn');
+      return;
+    }
+
+    closeScanner();
+    if (editingId) resetForm();
+    $('isbn').value = isbn;
+    $('memo').value = '';
+    if (info) applyInfo(info);
+    else { ['title', 'author', 'publisher', 'year'].forEach(f => $(f).value = ''); setCover(''); }
+    toast(info ? '정보를 채웠어요. 확인 후 [등록]을 누르세요' : '책 정보를 못 찾았어요. 직접 입력해 주세요');
+    $('bookForm').scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    scanLog(`오류: ${err.message}`, 'err');
+  } finally {
+    scanBusy = false;
+  }
+}
+
+async function handlePhoto(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return $('scanMsg').textContent = '사진이 전달되지 않았어요. "앨범에서 고르기"로 다시 시도해 주세요.';
+  $('scanMsg').textContent = `사진을 받았어요 (${Math.round(file.size / 1024)}KB). 바코드를 찾는 중...`;
+  try {
+    const code = await decodeImageFile(file);
+    if (!code) {
+      $('scanMsg').textContent = '바코드를 찾지 못했어요. 바코드가 사진의 가운데에 크고 선명하게, 흔들리지 않게 나오도록 다시 찍어 주세요.';
+      return;
+    }
+    $('scanMsg').textContent = `바코드를 읽었어요: ${code}`;
+    lastScan = { code: '', at: 0 }; // 사진은 같은 책을 다시 찍어도 처리
+    await onScanned(code);
+  } catch (err) {
+    $('scanMsg').textContent = '오류: ' + err.message;
+  }
+}
+
+$('scanBtn').addEventListener('click', openScanner);
+$('scanClose').addEventListener('click', closeScanner);
+$('cameraBtn').addEventListener('click', () => $('cameraInput').click());
+$('albumBtn').addEventListener('click', () => $('albumInput').click());
+$('cameraInput').addEventListener('change', handlePhoto);
+$('albumInput').addEventListener('change', handlePhoto);
+initDetector();
+
+// ---------- 이전 백업 가져오기 ----------
+$('importBtn').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!Array.isArray(data)) throw new Error('형식 오류');
+    if (!confirm(`${data.length}권을 스프레드시트에 추가합니다. (이미 있는 항목은 건너뜀)`)) return;
+    toast('가져오는 중...');
+    books = await api.importBooks(data);
+    render();
+    toast('가져오기 완료');
+  } catch (err) {
+    toast('가져오기 실패: ' + err.message);
+  }
+});
+
+loadBooks();
+</script>
+</body>
+</html>
